@@ -14,3 +14,4 @@ C:\Projects\ConcurrencyAndSynchronizationProblemSimulator\obj\Debug\net8.0-windo
 C:\Projects\ConcurrencyAndSynchronizationProblemSimulator\obj\Debug\net8.0-windows\ConcurrencyAndSynchronizationProblemSimulator.pdb
 C:\Projects\ConcurrencyAndSynchronizationProblemSimulator\obj\Debug\net8.0-windows\ConcurrencyAndSynchronizationProblemSimulator.genruntimeconfig.cache
 C:\Projects\ConcurrencyAndSynchronizationProblemSimulator\obj\Debug\net8.0-windows\ref\ConcurrencyAndSynchronizationProblemSimulator.dll
+C:\Projects\ConcurrencyAndSynchronizationProblemSimulator\obj\Debug\net8.0-windows\ConcurrencyAndSynchronizationProblemSimulator.sourcelink.json
