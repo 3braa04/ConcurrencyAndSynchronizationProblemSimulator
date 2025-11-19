@@ -1,9 +1,4 @@
 ﻿using BankTransferSimulator.Models;
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Windows.Forms;
-using System.Linq;
 
 namespace BankTransferSimulator.Services
 {
@@ -11,10 +6,11 @@ namespace BankTransferSimulator.Services
     {
         public List<Account> Accounts { get; } = new List<Account>();
         private readonly Random _random = new Random();
-        private volatile bool _stop = false;
+        private bool _stop = false;
         private long _transferCount = 0;
         private long _failedTransfers = 0;
         private long _deadlockCount = 0;
+        private long _raceConditionCount = 0;
 
         public bool UseSafeMode { get; set; } = false;
 
@@ -29,7 +25,7 @@ namespace BankTransferSimulator.Services
         public Label FailedTransfersLabel { get; set; }
         public Label DeadlockCountLabel { get; set; }
 
-        private Thread _balanceCheckThread;
+        private Thread _StatisticsCheck;
         private List<Thread> _transferThreads = new List<Thread>();
 
         public Bank(int numAccounts, decimal initialBalance, TextBox log)
@@ -39,12 +35,15 @@ namespace BankTransferSimulator.Services
                 Accounts.Add(new Account(i, initialBalance));
         }
 
+
+
         public void StartTransfers(int numThreads)
         {
             _stop = false;
             _transferCount = 0;
             _failedTransfers = 0;
             _deadlockCount = 0;
+            _raceConditionCount = 0;
             _transferThreads.Clear();
 
             for (int i = 0; i < numThreads; i++)
@@ -59,39 +58,22 @@ namespace BankTransferSimulator.Services
                 _transferThreads.Add(thread);
             }
 
-            _balanceCheckThread = new Thread(BalanceCheckLoop)
+            _StatisticsCheck = new Thread(StatisticsCheckLoop)
             {
                 IsBackground = true,
-                Name = "BalanceCheckThread"
+                Name = "StatisticsCheck"
             };
-            _balanceCheckThread.Start();
+            _StatisticsCheck.Start();
         }
 
-        public void Stop()
-        {
-            _stop = true;
-            Thread.Sleep(100);
-        }
-
-        public decimal TotalBalance()
-        {
-            lock (_balanceLock)
-            {
-                return Accounts.Sum(acc => acc.Balance);
-            }
-        }
-
-        public long GetTransferCount() => Interlocked.Read(ref _transferCount);
-        public long GetFailedTransfers() => Interlocked.Read(ref _failedTransfers);
-        public long GetDeadlockCount() => Interlocked.Read(ref _deadlockCount);
-
-        private void BalanceCheckLoop()
+        private void StatisticsCheckLoop()
         {
             decimal expectedTotal = Accounts.Count * InitialAccountBalance;
+            decimal difference = 0;
 
             while (!_stop)
             {
-                Thread.Sleep(300);
+                Thread.Sleep(100);
 
                 try
                 {
@@ -99,30 +81,22 @@ namespace BankTransferSimulator.Services
                     {
                         CurrentTotalLabel.BeginInvoke(new Action(() =>
                         {
-                            try
-                            {
-                                decimal currentTotal = TotalBalance();
-                                CurrentTotalLabel.Text = $"Current Total: {currentTotal:C}";
+                            decimal currentTotal = TotalBalance();
+                            difference += Math.Abs(currentTotal - expectedTotal);
+                            CurrentTotalLabel.Text = $"Current Total: {expectedTotal - difference:C}";
 
-                                if (Math.Abs(currentTotal - expectedTotal) > 0.01m)
+                            if (difference > 0.01m)
+                            {
+                                Interlocked.Increment(ref _raceConditionCount);
+                                CurrentTotalLabel.ForeColor = Color.Red;
+                                StatusLabel?.BeginInvoke(new Action(() =>
                                 {
-                                    CurrentTotalLabel.ForeColor = System.Drawing.Color.Red;
-                                    StatusLabel?.BeginInvoke(new Action(() =>
-                                    {
-                                        StatusLabel.Text = "Status: ⚠ CRITICAL ERROR - Balance Corrupted!";
-                                        StatusLabel.ForeColor = System.Drawing.Color.DarkRed;
-                                    }));
-                                }
-                                else if (!UseSafeMode)
-                                {
-                                    CurrentTotalLabel.ForeColor = System.Drawing.Color.OrangeRed;
-                                }
-                                else
-                                {
-                                    CurrentTotalLabel.ForeColor = System.Drawing.Color.Green;
-                                }
+                                    StatusLabel.Text = $"Status: ⚠ CRITICAL ERROR - Balance Corrupted by {difference:C}!";
+                                    StatusLabel.ForeColor = Color.DarkRed;
+                                }));
                             }
-                            catch { }
+
+                            CurrentTotalLabel.ForeColor = UseSafeMode ? Color.Green : Color.OrangeRed;
                         }));
                     }
 
@@ -130,11 +104,7 @@ namespace BankTransferSimulator.Services
                     {
                         TransferCountLabel.BeginInvoke(new Action(() =>
                         {
-                            try
-                            {
-                                TransferCountLabel.Text = $"Completed: {GetTransferCount():N0}";
-                            }
-                            catch { }
+                            TransferCountLabel.Text = $"Completed: {GetTransferCount():N0}";
                         }));
                     }
 
@@ -142,11 +112,7 @@ namespace BankTransferSimulator.Services
                     {
                         FailedTransfersLabel.BeginInvoke(new Action(() =>
                         {
-                            try
-                            {
-                                FailedTransfersLabel.Text = $"Failed: {GetFailedTransfers():N0}";
-                            }
-                            catch { }
+                            FailedTransfersLabel.Text = $"Failed: {GetFailedTransfers():N0}";
                         }));
                     }
 
@@ -154,11 +120,7 @@ namespace BankTransferSimulator.Services
                     {
                         DeadlockCountLabel.BeginInvoke(new Action(() =>
                         {
-                            try
-                            {
-                                DeadlockCountLabel.Text = $"Deadlocks: {GetDeadlockCount():N0}";
-                            }
-                            catch { }
+                            DeadlockCountLabel.Text = $"Deadlocks: {GetDeadlockCount():N0}";
                         }));
                     }
                 }
@@ -196,7 +158,7 @@ namespace BankTransferSimulator.Services
                     else
                         Interlocked.Increment(ref _failedTransfers);
 
-                    Thread.Sleep(_random.Next(10, 100));
+                    Thread.Sleep(_random.Next(5, 50));
                 }
                 catch (Exception ex)
                 {
@@ -207,74 +169,141 @@ namespace BankTransferSimulator.Services
 
         private bool UnsafeTransfer(Account src, Account dst, decimal amount, int threadId)
         {
-            // ولكن مع timeout لمنع تجمد البرنامج
-            if (Monitor.TryEnter(src.GetLock(), 5000)) // 5 ثواني timeout
-            {
-                try
-                {
-                    Thread.Sleep(10); // زيادة فرصة حدوث deadlock
+            bool srcLocked = false;
+            bool dstLocked = false;
 
-                    if (Monitor.TryEnter(dst.GetLock(), 5000))
-                    {
-                        try
-                        {
-                            if (src.Balance >= amount)
-                            {
-                                src.Withdraw(amount);
-                                dst.Deposit(amount);
-                                Log($"[UNSAFE][T{threadId}] {amount:C} | Acc#{src.Id} → Acc#{dst.Id}");
-                                return true;
-                            }
-                            return false;
-                        }
-                        finally
-                        {
-                            Monitor.Exit(dst.GetLock());
-                        }
-                    }
-                    else
-                    {
-                        // DEADLOCK DETECTED!
-                        Interlocked.Increment(ref _deadlockCount);
-                        Log($"[DEADLOCK][T{threadId}] ⚠ Could not acquire second lock! Transfer failed: {amount:C} | Acc#{src.Id} → Acc#{dst.Id}");
-                        return false;
-                    }
-                }
-                finally
+            try
+            {
+                if (!Monitor.TryEnter(src.GetLock(), 1000))
                 {
-                    Monitor.Exit(src.GetLock());
+                    Interlocked.Increment(ref _deadlockCount);
+                    Log($"[DEADLOCK][T{threadId}] ⚠ Timeout on first lock! Acc#{src.Id} → Acc#{dst.Id} ({amount:C})");
+                    return false;
+                }
+                srcLocked = true;
+
+
+                if (!Monitor.TryEnter(dst.GetLock(), 1000))
+                {
+                    Interlocked.Increment(ref _deadlockCount);
+                    Log($"[DEADLOCK][T{threadId}] ⚠ Timeout on second lock! Acc#{src.Id} → Acc#{dst.Id} ({amount:C})");
+                    return false;
+                }
+                dstLocked = true;
+
+                if (src.Balance >= amount)
+                {
+                    src.Withdraw(amount);
+                    Thread.Sleep(5);
+                    dst.Deposit(amount);
+
+                    Log($"[UNSAFE][T{threadId}] {amount:C} | Acc#{src.Id} → Acc#{dst.Id}");
+                    return true;
+                }
+                else
+                {
+                    Log($"FAILED");
+                    return false;
                 }
             }
-            else
+            finally
             {
-                // DEADLOCK DETECTED!
-                Interlocked.Increment(ref _deadlockCount);
-                Log($"[DEADLOCK][T{threadId}] ⚠ Could not acquire first lock! Transfer failed: {amount:C} | Acc#{src.Id} → Acc#{dst.Id}");
-                return false;
+                if (dstLocked)
+                    try { Monitor.Exit(dst.GetLock()); } catch { }
+                
+                if (srcLocked)
+                    try { Monitor.Exit(src.GetLock()); } catch { }
             }
         }
 
         private bool SafeTransfer(Account src, Account dst, decimal amount, int threadId)
         {
+            bool firstLocked = false;
+            bool secondLocked = false;
             var first = src.Id < dst.Id ? src : dst;
             var second = src.Id < dst.Id ? dst : src;
 
-            lock (first.GetLock())
+            try
             {
-                Thread.Sleep(5);
-                lock (second.GetLock())
+                if (!Monitor.TryEnter(first.GetLock(), 1000))
                 {
-                    if (src.Balance >= amount)
-                    {
-                        src.Withdraw(amount);
-                        dst.Deposit(amount);
-                        Log($"[SAFE][T{threadId}] {amount:C} | Acc#{src.Id} → Acc#{dst.Id}");
-                        return true;
-                    }
+                    Interlocked.Increment(ref _deadlockCount);
+                    Log($"[DEADLOCK][T{threadId}] ⚠ Timeout on first lock! Acc#{src.Id} → Acc#{dst.Id} ({amount:C})");
+                    return false;
+                }
+                firstLocked = true;
+
+                if (!Monitor.TryEnter(second.GetLock(), 1000))
+                {
+                    Interlocked.Increment(ref _deadlockCount);
+                    Log($"[DEADLOCK][T{threadId}] ⚠ Timeout on second lock! Acc#{src.Id} → Acc#{dst.Id} ({amount:C})");
+                    return false;
+                }
+                secondLocked = true;
+
+                if (src.Balance >= amount)
+                {
+                    src.Withdraw(amount);
+                    dst.Deposit(amount);
+
+                    Log($"[SAFE][T{threadId}] {amount:C} | Acc#{src.Id} → Acc#{dst.Id}");
+                    return true;
+                }
+                else
+                {
+                    Log($"FAILED");
                     return false;
                 }
             }
+            finally
+            {
+                if (firstLocked)
+                    try { Monitor.Exit(first.GetLock()); } catch { }
+
+                if (secondLocked)
+                    try { Monitor.Exit(second.GetLock()); } catch { }
+            }
         }
+
+
+
+        public void Stop()
+        {
+            _stop = true;
+
+            if (_StatisticsCheck != null && _StatisticsCheck.IsAlive)
+            {
+                _StatisticsCheck.Join(2000);
+            }
+
+            foreach (var thread in _transferThreads)
+            {
+                if (thread != null && thread.IsAlive)
+                {
+                    thread.Join(1000);
+                }
+            }
+        }
+
+        public decimal TotalBalance()
+        {
+            if (!UseSafeMode)
+            {
+                return Accounts.Sum(acc => acc.Balance);
+            }
+            else
+            {
+                lock (_balanceLock)
+                {
+                    return Accounts.Sum(acc => acc.Balance);
+                }
+            }
+        }
+
+        public long GetTransferCount() => Interlocked.Read(ref _transferCount);
+        public long GetFailedTransfers() => Interlocked.Read(ref _failedTransfers);
+        public long GetDeadlockCount() => Interlocked.Read(ref _deadlockCount);
+        public long GetRaceConditionCount() => Interlocked.Read(ref _raceConditionCount);
 
         private void Log(string message)
         {
@@ -291,7 +320,7 @@ namespace BankTransferSimulator.Services
                     AppendLog(message);
                 }
             }
-            catch (Exception){}
+            catch (Exception) { }
         }
 
         private void AppendLog(string message)
@@ -302,7 +331,7 @@ namespace BankTransferSimulator.Services
                 {
                     if (_log.IsDisposed) return;
 
-                    // Prevent memory issues by limiting log size
+                    // Prevent memory issues
                     if (_log.Lines.Length > 1000)
                     {
                         var lines = _log.Lines;
@@ -312,7 +341,10 @@ namespace BankTransferSimulator.Services
                     _log.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] {message}{Environment.NewLine}");
                 }
             }
-            catch (Exception){}
+            catch (Exception)
+            {
+                // Ignore logging errors
+            }
         }
     }
 }

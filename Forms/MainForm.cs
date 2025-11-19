@@ -106,10 +106,10 @@ namespace BankTransferSimulator.Forms
                 txtLog.AppendText($"  • Deadlocks may occur\r\n");
                 txtLog.AppendText($"  • Threads will timeout after 5 seconds and continue\r\n");
                 txtLog.AppendText($"  • Deadlock counter will track occurrences\r\n");
-                txtLog.ForeColor = Color.LightGreen;
             }
             else
             {
+                txtLog.ForeColor = Color.LightGreen;
                 txtLog.AppendText($"\r\n✓ Running in SAFE mode\r\n");
                 txtLog.AppendText($"  • Deadlock prevention via lock ordering\r\n");
                 txtLog.AppendText($"  • Guaranteed data consistency\r\n");
@@ -164,33 +164,6 @@ namespace BankTransferSimulator.Forms
             txtLog.AppendText($"  • Completed Transfers: {completedTransfers:N0}\r\n");
             txtLog.AppendText($"  • Failed Transfers: {failedTransfers:N0}\r\n");
             txtLog.AppendText($"  • Deadlocks Detected: {deadlockCount:N0}\r\n");
-
-            //bool balanceConsistent = Math.Abs(finalTotal - expectedTotal) < 0.01m;
-
-            //if (!balanceConsistent)
-            //{
-            //    txtLog.ForeColor = Color.Red;
-            //    txtLog.AppendText($"\r\n❌ CRITICAL ERROR: Balance Inconsistent!\r\n");
-            //    txtLog.AppendText($"  Difference: {(finalTotal - expectedTotal):C}\r\n");
-            //    txtLog.AppendText($"  This indicates data corruption due to race conditions!\r\n");
-            //    txtLog.ForeColor = Color.LightGreen;
-
-            //    lblTotalCurrent.ForeColor = Color.Red;
-            //    lblStatus.Text = "Status: Stopped - ❌ DATA CORRUPTED";
-            //    lblStatus.ForeColor = Color.DarkRed;
-            //    lblStatus.BackColor = Color.FromArgb(255, 230, 230);
-            //}
-            //else
-            //{
-            //    txtLog.ForeColor = Color.LightGreen;
-            //    txtLog.AppendText($"\r\n✓ SUCCESS: Balance is Consistent!\r\n");
-            //    txtLog.AppendText($"  All transfers completed without data corruption.\r\n");
-
-            //    lblTotalCurrent.ForeColor = Color.Green;
-            //    lblStatus.Text = "Status: Stopped - ✓ Data Consistent";
-            //    lblStatus.ForeColor = Color.Green;
-            //    lblStatus.BackColor = Color.FromArgb(230, 255, 230);
-            //}
 
             lblTotalCurrent.ForeColor = Color.Green;
             lblStatus.Text = "Status: Stopped";

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ConcurrencyAndSynchronizationProblemSimulator")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+eb526576584885e31aedcb1f7741d8e27ff8d222")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0d8f02b337a347443a673cb43acc81dd7d943e64")]
 [assembly: System.Reflection.AssemblyProductAttribute("ConcurrencyAndSynchronizationProblemSimulator")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ConcurrencyAndSynchronizationProblemSimulator")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
